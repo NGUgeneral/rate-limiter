@@ -1,0 +1,37 @@
+# --- Python Specific ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.env
+*.pyd
+
+# --- Visual Studio / Windows ---
+.vs/
+*.user
+*.userossc
+*.sln.docstates
+bin/
+obj/
+.DS_Store
+Thumbs.db
+
+# --- Project Specific & Docker ---
+.dockerignore
+# Don't ignore the docker-compose.yml, but ignore local overrides if you use them
+docker-compose.override.yml
+*.log
+
+# --- Redis / Data ---
+# Ignore local redis data persistence if you mount a volume later
+dump.rdb
+appendonly.aof
+
+# --- Tooling ---
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
