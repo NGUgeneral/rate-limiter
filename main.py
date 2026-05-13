@@ -1,12 +1,21 @@
+import os
+import redis
 from fastapi import FastAPI
 
-app = FastAPI()
+app = FastAPI(title="Distributed Rate Limiter")
 
-@app.get("/")
-def read_root():
-    return {"Project": "Distributed Rate Limiter", "Status": "Initialized"}
+# Setup Redis connection using environment variables for future AWS deployment
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
-@app.get("/check")
-def check_limit():
-    # This is where the Redis logic will eventually go
-    return {"allowed": True, "remaining": 10}
+# Initialize Redis with decode_responses=True so we get strings back, not bytes
+r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+
+@app.get("/health")
+def health_check():
+    try:
+        # Pinging Redis is a standard 'Engineering Guardrail' 
+        is_connected = r.ping()
+        return {"status": "ok", "redis_connected": is_connected}
+    except redis.ConnectionError:
+        return {"status": "error", "redis_connected": False}
