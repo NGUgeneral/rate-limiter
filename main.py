@@ -1,19 +1,13 @@
 import os
 import redis
-from fastapi import (
-    FastAPI,
-    Depends,
-    HTTPException,
-    Query
-)
+import uuid
+from fastapi import FastAPI, Depends, HTTPException
 
 app = FastAPI(title="Distributed Rate Limiter")
 
-# Configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 
-# Connection Pool (Established once at startup)
 pool = redis.ConnectionPool(
     host=REDIS_HOST, 
     port=REDIS_PORT, 
@@ -22,8 +16,13 @@ pool = redis.ConnectionPool(
 )
 
 def get_redis():
-    """Dependency that provides a redis client from the pool."""
     yield redis.Redis(connection_pool=pool)
+
+
+LUA_PATH = os.path.join(os.path.dirname(__file__), "./", "rate-limiter.lua")
+with open(LUA_PATH, "r") as f:
+    LUA_RATE_LIMITER_CODE = f.read()
+
 
 @app.get("/health")
 def health_check(r: redis.Redis = Depends(get_redis)):
@@ -32,25 +31,48 @@ def health_check(r: redis.Redis = Depends(get_redis)):
     except redis.ConnectionError:
         return {"status": "error", "redis_connected": False}
 
+
 @app.post("/add")
-def add_value(
-    key: str, 
-    value: str, 
-    r: redis.Redis = Depends(get_redis)
-):
-    # Set the key in Redis
+def add_value(key: str, value: str, r: redis.Redis = Depends(get_redis)):
     r.set(key, value)
     return {"message": f"Key '{key}' set successfully"}
 
+
 @app.get("/get")
-def get_value(
-    key: str, 
-    r: redis.Redis = Depends(get_redis)
-):
+def get_value(key: str, r: redis.Redis = Depends(get_redis)):
     val = r.get(key)
     if val is None:
         raise HTTPException(status_code=404, detail="Key not found")
     return {"key": key, "value": val}
+
+
+@app.get("/is_allowed")
+def is_allowed(
+    key: str, 
+    limit: int = 5, 
+    window: int = 60, 
+    r: redis.Redis = Depends(get_redis)
+):
+    script = r.register_script(LUA_RATE_LIMITER_CODE)
+    nonce = uuid.uuid4().hex[:6]
+    allowed_flag, count = script(keys=[key], args=[limit, window, nonce])
+    
+    if not allowed_flag:
+        raise HTTPException(
+            status_code=429, 
+            detail={
+                "message": "Rate limit exceeded",
+                "current_count": count,
+                "limit": limit
+            }
+        )
+    
+    return {
+        "status": "allowed",
+        "current_count": count,
+        "limit": limit,
+        "remaining": limit - count
+    }
 
 @app.delete("/clear")
 def clear_values(r: redis.Redis = Depends(get_redis)):
