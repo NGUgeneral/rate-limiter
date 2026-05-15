@@ -53,26 +53,40 @@ def is_allowed(
     window: int = 60, 
     r: redis.Redis = Depends(get_redis)
 ):
-    script = r.register_script(LUA_RATE_LIMITER_CODE)
     nonce = uuid.uuid4().hex[:6]
-    allowed_flag, count = script(keys=[key], args=[limit, window, nonce])
     
-    if not allowed_flag:
-        raise HTTPException(
-            status_code=429, 
-            detail={
-                "message": "Rate limit exceeded",
-                "current_count": count,
-                "limit": limit
-            }
-        )
-    
-    return {
-        "status": "allowed",
-        "current_count": count,
-        "limit": limit,
-        "remaining": limit - count
-    }
+    try:
+        script = r.register_script(LUA_RATE_LIMITER_CODE)
+        allowed_flag, count = script(keys=[key], args=[limit, window, nonce])
+        
+        if not allowed_flag:
+            raise HTTPException(
+                status_code=429, 
+                detail={
+                    "message": "Rate limit exceeded",
+                    "current_count": count,
+                    "limit": limit
+                }
+            )
+        
+        return {
+            "status": "allowed",
+            "current_count": count,
+            "limit": limit,
+            "remaining": limit - count
+        }
+
+    except (redis.ConnectionError, redis.TimeoutError) as e:
+        # implement proper logging
+        print(f"CRITICAL: Redis connection failed. Failing open. Error: {e}")
+        
+        return {
+            "status": "allowed",
+            "message": "Rate limiting temporarily unavailable, failing open",
+            "current_count": 0,
+            "limit": limit,
+            "remaining": limit
+        }
 
 @app.delete("/clear")
 def clear_values(r: redis.Redis = Depends(get_redis)):
