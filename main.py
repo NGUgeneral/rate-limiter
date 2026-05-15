@@ -19,7 +19,9 @@ def get_redis():
     yield redis.Redis(connection_pool=pool)
 
 
-LUA_PATH = os.path.join(os.path.dirname(__file__), "./", "rate-limiter.lua")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LUA_FILENAME = "rate_limiter.lua" 
+LUA_PATH = os.path.join(BASE_DIR, LUA_FILENAME)
 with open(LUA_PATH, "r") as f:
     LUA_RATE_LIMITER_CODE = f.read()
 
