@@ -1,22 +1,24 @@
 import os
 import redis
 import uuid
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException
+)
+from mangum import Mangum
 
 app = FastAPI(title="Distributed Rate Limiter")
 
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-
-pool = redis.ConnectionPool(
-    host=REDIS_HOST, 
-    port=REDIS_PORT, 
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+pool = redis.ConnectionPool.from_url(
+    url=REDIS_URL,
     decode_responses=True,
-    max_connections=20
+    max_connections=2
 )
 
 def get_redis():
-    yield redis.Redis(connection_pool=pool)
+    return redis.Redis(connection_pool=pool)
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -24,6 +26,9 @@ LUA_FILENAME = "rate_limiter.lua"
 LUA_PATH = os.path.join(BASE_DIR, LUA_FILENAME)
 with open(LUA_PATH, "r") as f:
     LUA_RATE_LIMITER_CODE = f.read()
+
+_init_client = redis.Redis(connection_pool=pool)
+LUA_SCRIPT_RUNNER = _init_client.register_script(LUA_RATE_LIMITER_CODE)
 
 
 @app.get("/health")
@@ -58,8 +63,13 @@ def is_allowed(
     nonce = uuid.uuid4().hex[:6]
     
     try:
-        script = r.register_script(LUA_RATE_LIMITER_CODE)
-        allowed_flag, count = script(keys=[key], args=[limit, window, nonce])
+        allowed_flag, count = LUA_SCRIPT_RUNNER(
+            # we use hashtag key prefix, since current implementation 
+            # uses a shared cloud redis instance;
+            keys=[f"{{ratelimiter}}:{key}"], 
+            args=[limit, window, nonce],
+            client=r
+        )
         
         if not allowed_flag:
             raise HTTPException(
@@ -90,7 +100,4 @@ def is_allowed(
             "remaining": limit
         }
 
-@app.delete("/clear")
-def clear_values(r: redis.Redis = Depends(get_redis)):
-    r.flushdb()
-    return {"message": "All keys cleared successfully"}
+handler = Mangum(app)
