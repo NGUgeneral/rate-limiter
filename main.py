@@ -66,7 +66,7 @@ def is_allowed(
         allowed_flag, count = LUA_SCRIPT_RUNNER(
             # we use hashtag key prefix, since current implementation 
             # uses a shared cloud redis instance;
-            keys=[f"{{ratelimiter}}:{key}"], 
+            keys=[f"{{ratelimiter}}:v1:{key}"], 
             args=[limit, window, nonce],
             client=r
         )
