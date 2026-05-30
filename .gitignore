@@ -35,3 +35,6 @@ appendonly.aof
 .coverage
 htmlcov/
 .mypy_cache/
+
+# --- Artifacts ---
+*.zip
