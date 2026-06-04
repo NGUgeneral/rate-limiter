@@ -16,7 +16,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Install Linux Dependencies
         run: |
@@ -25,8 +25,8 @@ jobs:
             --platform manylinux2014_x86_64 \
             --target ./build \
             --implementation cp \
-            --python-version 3.11 \
-            --abi cp311 \
+            --python-version 3.12 \
+            --abi cp312 \
             --only-binary=:all: \
             --upgrade \
             -r requirements.txt
