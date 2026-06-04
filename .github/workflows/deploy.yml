@@ -21,7 +21,15 @@ jobs:
       - name: Install Linux Dependencies
         run: |
           mkdir build
-          pip install --platform manylinux2014_x86_64 --target ./build --implementation cp --python-version 3.11 --only-binary=:all: -r requirements.txt
+          pip install \
+            --platform manylinux2014_x86_64 \
+            --target ./build \
+            --implementation cp \
+            --python-version 3.11 \
+            --abi cp311 \
+            --only-binary=:all: \
+            --upgrade \
+            -r requirements.txt
           cp main.py ./build/
           cp rate_limiter.lua ./build/
 
