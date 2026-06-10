@@ -9,23 +9,19 @@ from fastapi import (
 )
 from mangum import Mangum
 
+from config import settings
 from schemas import RateCheckRequest
 
 app = FastAPI(title="Distributed Rate Limiter")
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 pool = redis.ConnectionPool.from_url(
-    url=REDIS_URL,
+    url=settings.redis_url,
     decode_responses=True,
     max_connections=5
 )
 
 def get_redis():
     return redis.Redis(connection_pool=pool)
-
-# Strict environmental defaults if no dynamic rules are supplied in the request payload
-DEFAULT_LIMIT = int(os.getenv("DEFAULT_IP_LIMIT", 60))       
-DEFAULT_WINDOW = int(os.getenv("DEFAULT_IP_WINDOW", 60))      
 
 # Load the atomic sliding-window engine at boot
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -65,8 +61,8 @@ def is_allowed(
     else:
         # IP based request flow;
         redis_key = f"{{ratelimiter}}:v1:ip:{payload.ip_key}"
-        active_limit = payload.max_requests if payload.max_requests else DEFAULT_LIMIT
-        active_window = payload.window_seconds if payload.window_seconds else DEFAULT_WINDOW
+        active_limit = payload.max_requests if payload.max_requests else settings.default_ip_limit
+        active_window = payload.window_seconds if payload.window_seconds else settings.default_ip_window
     
     try:
         allowed_flag, count = LUA_SCRIPT_RUNNER(
