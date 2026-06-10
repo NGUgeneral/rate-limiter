@@ -72,9 +72,9 @@ async def is_allowed(
     r: aioredis.Redis = Depends(get_redis)
 ):
     nonce = uuid.uuid4().hex[:6]
-    if payload.client_key:
+    if payload.access_key:
         # Token based request flow
-        redis_key = f"{{ratelimiter}}:v1:token:{payload.client_key}"
+        redis_key = f"{{ratelimiter}}:v1:token:{payload.access_key}"
         if payload.max_requests is None or payload.window_seconds is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

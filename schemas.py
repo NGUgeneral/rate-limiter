@@ -2,10 +2,24 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 class RateCheckRequest(BaseModel):
-    client_key: Optional[str] = Field(None, description="The 'company:tier' string from the JWT audience claim.")
-    ip_key: str = Field(..., description="The raw public IP address of the incoming request.")
-    max_requests: Optional[int] = Field(None, alias="limit", gt=0)
-    window_seconds: Optional[int] = Field(None, alias="window", gt=0)
+    access_key: Optional[str] = Field(
+        None, 
+        description="The authenticated identification token extracted from the JWT."
+    )
+    ip_key: str = Field(
+        ..., 
+        description="The resolved public client IP address passed explicitly by the edge service."
+    )
+    limit: Optional[int] = Field(
+        None, 
+        gt=0, 
+        description="Dynamic request ceiling. Required if access_key is present."
+    )
+    window: Optional[int] = Field(
+        None, 
+        gt=0, 
+        description="Sliding window duration in seconds. Required if access_key is present."
+    )
 
     model_config = {
         "populate_by_name": True
