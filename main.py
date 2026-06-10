@@ -4,9 +4,12 @@ import uuid
 from fastapi import (
     FastAPI,
     Depends,
-    HTTPException
+    HTTPException,
+    status
 )
 from mangum import Mangum
+
+from schemas import RateCheckRequest
 
 app = FastAPI(title="Distributed Rate Limiter")
 
@@ -14,13 +17,17 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 pool = redis.ConnectionPool.from_url(
     url=REDIS_URL,
     decode_responses=True,
-    max_connections=2
+    max_connections=5
 )
 
 def get_redis():
     return redis.Redis(connection_pool=pool)
 
+# Strict environmental defaults if no dynamic rules are supplied in the request payload
+DEFAULT_LIMIT = int(os.getenv("DEFAULT_IP_LIMIT", 60))       
+DEFAULT_WINDOW = int(os.getenv("DEFAULT_IP_WINDOW", 60))      
 
+# Load the atomic sliding-window engine at boot
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LUA_FILENAME = "rate_limiter.lua" 
 LUA_PATH = os.path.join(BASE_DIR, LUA_FILENAME)
@@ -39,65 +46,60 @@ def health_check(r: redis.Redis = Depends(get_redis)):
         return {"status": "error", "redis_connected": False}
 
 
-@app.post("/add")
-def add_value(key: str, value: str, r: redis.Redis = Depends(get_redis)):
-    r.set(key, value)
-    return {"message": f"Key '{key}' set successfully"}
-
-
-@app.get("/get")
-def get_value(key: str, r: redis.Redis = Depends(get_redis)):
-    val = r.get(key)
-    if val is None:
-        raise HTTPException(status_code=404, detail="Key not found")
-    return {"key": key, "value": val}
-
-
-@app.get("/is_allowed")
+@app.post("/v1/is_allowed", status_code=status.HTTP_200_OK)
 def is_allowed(
-    key: str, 
-    limit: int = 5, 
-    window: int = 60, 
+    payload: RateCheckRequest, 
     r: redis.Redis = Depends(get_redis)
 ):
     nonce = uuid.uuid4().hex[:6]
+    if payload.client_key:
+        # Token based request flow;
+        redis_key = f"{{ratelimiter}}:v1:token:{payload.client_key}"
+        if payload.max_requests is None or payload.window_seconds is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Token-authenticated requests must explicitly supply limit and window metrics."
+            )
+        active_limit = payload.max_requests
+        active_window = payload.window_seconds
+    else:
+        # IP based request flow;
+        redis_key = f"{{ratelimiter}}:v1:ip:{payload.ip_key}"
+        active_limit = payload.max_requests if payload.max_requests else DEFAULT_LIMIT
+        active_window = payload.window_seconds if payload.window_seconds else DEFAULT_WINDOW
     
     try:
         allowed_flag, count = LUA_SCRIPT_RUNNER(
-            # we use hashtag key prefix, since current implementation 
-            # uses a shared cloud redis instance;
-            keys=[f"{{ratelimiter}}:v1:{key}"], 
-            args=[limit, window, nonce],
+            keys=[redis_key], 
+            args=[active_limit, active_window, nonce],
             client=r
         )
         
         if not allowed_flag:
             raise HTTPException(
-                status_code=429, 
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS, 
                 detail={
                     "message": "Rate limit exceeded",
                     "current_count": count,
-                    "limit": limit
+                    "limit": active_limit
                 }
             )
         
         return {
             "status": "allowed",
             "current_count": count,
-            "limit": limit,
-            "remaining": limit - count
+            "limit": active_limit,
+            "remaining": max(0, active_limit - count)
         }
 
     except (redis.ConnectionError, redis.TimeoutError) as e:
-        # implement proper logging
         print(f"CRITICAL: Redis connection failed. Failing open. Error: {e}")
-        
         return {
             "status": "allowed",
             "message": "Rate limiting temporarily unavailable, failing open",
             "current_count": 0,
-            "limit": limit,
-            "remaining": limit
+            "limit": active_limit,
+            "remaining": active_limit
         }
 
 handler = Mangum(app)
