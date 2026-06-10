@@ -30,8 +30,8 @@ jobs:
             --only-binary=:all: \
             --upgrade \
             -r requirements.txt
-          cp main.py ./build/
-          cp rate_limiter.lua ./build/
+          cp *.py ./build/ 2>/dev/null || true
+          cp *.lua ./build/ 2>/dev/null || true
 
       - name: Create Zip Package
         run: |
