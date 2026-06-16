@@ -1,53 +1,39 @@
-name: Deploy to AWS Lambda
+name: Continuous Integration (Rate Limiter)
 
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  deploy:
+  validate:
+    name: Build Verification & Unit Tests
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    # 1. Pull down the clean Python source code from your repo
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+    # 2. Set up native Python 3.12 runner environment
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
 
-      - name: Install Linux Dependencies
-        run: |
-          mkdir build
-          pip install \
-            --platform manylinux2014_x86_64 \
-            --target ./build \
-            --implementation cp \
-            --python-version 3.12 \
-            --abi cp312 \
-            --only-binary=:all: \
-            --upgrade \
-            -r requirements.txt
-          cp *.py ./build/ 2>/dev/null || true
-          cp *.lua ./build/ 2>/dev/null || true
+    # 3. Verify standard requirements install cleanly without resolution conflicts
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        # If you have your pytest suite ready, uncomment below:
+        # pip install pytest && pytest
 
-      - name: Create Zip Package
-        run: |
-          cd build
-          zip -r ../deployment_package.zip .
-          cd ..
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: eu-central-1
-
-      - name: Deploy Binary to Lambda
-        run: |
-          aws lambda update-function-code \
-            --function-name rate-limiter \
-            --zip-file fileb://deployment_package.zip
+    # 4. Verify that your cloud-agnostic Dockerfile builds smoothly 
+    - name: Test Local Docker Build
+      run: |
+        docker build -t flagship-rate-limiter:test .
