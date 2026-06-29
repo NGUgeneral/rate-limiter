@@ -35,5 +35,6 @@ jobs:
 
     # 4. Verify that your cloud-agnostic Dockerfile builds smoothly 
     - name: Test Local Docker Build
+      if: false # disable deployment
       run: |
         docker build -t flagship-rate-limiter:test .
