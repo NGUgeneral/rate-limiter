@@ -65,7 +65,7 @@ async def health_check(r: aioredis.Redis = Depends(get_redis)):
         return {"status": "error", "redis_connected": False}
 
 
-@app.post("/v1/is_allowed", status_code=status.HTTP_200_OK)
+@app.post("/api/v1/is_allowed", status_code=status.HTTP_200_OK)
 async def is_allowed(
     payload: RateCheckRequest, 
     r: aioredis.Redis = Depends(get_redis)
