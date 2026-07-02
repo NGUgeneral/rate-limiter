@@ -37,4 +37,4 @@ jobs:
     - name: Test Local Docker Build
       if: false # disable deployment
       run: |
-        docker build -t flagship-rate-limiter:test .
+        docker build -t headsntails-rate-limiter:test .
