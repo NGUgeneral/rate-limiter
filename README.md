@@ -1,8 +1,8 @@
 # Rate Limiter Service (`rate-limiter`)
 
-A lightweight, high-performance microservice built with **Python and FastAPI** designed to enforce traffic throttling policies across the Flagship ecosystem. It utilizes an asynchronous **Redis-backed Sliding Window Log** algorithm to compute quota consumption states with minimal overhead.
+A lightweight, high-performance microservice built with **Python and FastAPI** designed to enforce traffic throttling policies across the `headsntails` ecosystem. It utilizes an asynchronous **Redis-backed Sliding Window Log** algorithm to compute quota consumption states with minimal overhead.
 
-All further description is from perspective of it being a part of [Flagship Platform](https://github.com/NGUgeneral/flagship-platform). But it does not mean that it can't be used as standalone service as-is without any issues. 
+All further description is from perspective of it being a part of [`headsntails` Platform](https://github.com/NGUgeneral/headsntails-platform). But it does not mean that it can't be used as standalone service as-is without any issues. 
 
 ## Core Architecture & Strategy Logic
 
