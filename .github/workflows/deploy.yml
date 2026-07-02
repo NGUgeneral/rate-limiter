@@ -27,6 +27,8 @@ jobs:
         pip install pytest httpx pytest-asyncio
 
     - name: Run Unit Tests
+      env:
+        REDIS_URL: redis://localhost:6379/0
       run: |
         pytest
 
