@@ -12,14 +12,8 @@ jobs:
       packages: write
 
     steps:
-    - name: Checkout Code Base
+    - name: Checkout Code
       uses: actions/checkout@v4
-
-    - name: Normalize Repository Path for Container Registry
-      id: registry_path
-      uses: ASzc/change-string-case-action@v7
-      with:
-        string: "ghcr.io/${{ github.repository }}"
 
     - name: Log into GitHub Container Registry
       uses: docker/login-action@v3
@@ -28,9 +22,14 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Set lowercase repository owner
+      id: lowercase
+      run: echo "repo_owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+      shell: bash
+
     - name: Build and Push Image
       uses: docker/build-push-action@v5
       with:
         context: .
         push: true
-        tags: "${{ steps.registry_path.outputs.lowercase }}:latest"
+        tags: ghcr.io/${{ steps.lowercase.outputs.repo_owner }}/rate-limiter:latest
