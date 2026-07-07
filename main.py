@@ -1,27 +1,24 @@
 import os
-import uuid
 import logging
 from contextlib import asynccontextmanager
-from fastapi import (
-    FastAPI,
-    Depends,
-    HTTPException,
-    status
-)
+from fastapi import FastAPI, HTTPException, Response, status
 from redis import asyncio as aioredis
 
 from config import settings
 from schemas import RateCheckRequest
+from services.ratelimit import execute_rate_check
+from grpc_server.server import GRPCServerManager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 pool = None
 LUA_SCRIPT_RUNNER = None
+grpc_manager = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global pool, LUA_SCRIPT_RUNNER
+    global pool, LUA_SCRIPT_RUNNER, grpc_manager
 
     pool = aioredis.ConnectionPool.from_url(
         url=settings.redis_url,
@@ -36,90 +33,53 @@ async def lifespan(app: FastAPI):
         
     _init_client = aioredis.Redis(connection_pool=pool)
     LUA_SCRIPT_RUNNER = _init_client.register_script(lua_code)
+
+    grpc_manager = GRPCServerManager(pool=pool, lua_runner=LUA_SCRIPT_RUNNER, port=50051)
+    await grpc_manager.start()
     
-    yield  # Control handed over to FastAPI to process requests
+    yield
+
+    if grpc_manager:
+        await grpc_manager.stop(grace=5)
     
-    # Clean up and close the pool sockets gracefully at shutdown
     if pool:
         await pool.disconnect()
 
 
 app = FastAPI(title="Distributed Rate Limiter", lifespan=lifespan)
 
+@app.post("/api/v1/is_allowed")
+async def check_rate_http(payload: RateCheckRequest, response: Response):
+    res = await execute_rate_check(
+        pool=pool,
+        lua_runner=LUA_SCRIPT_RUNNER,
+        access_key=payload.access_key,
+        ip_key=payload.ip_key,
+        limit=payload.limit,
+        window=payload.window
+    )
 
-async def get_redis():
-    if not pool:
+    if "validation_error" in res:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Redis connection pool is uninitialized."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Client must explicitly supply limit and window metrics when utilizing token layout."
         )
-    return aioredis.Redis(connection_pool=pool)
 
-
-@app.get("/health")
-async def health_check(r: aioredis.Redis = Depends(get_redis)):
-    try:
-        redis_alive = await r.ping()
-        return {"status": "ok", "redis_connected": redis_alive}
-    except Exception:
-        return {"status": "error", "redis_connected": False}
-
-
-@app.post("/api/v1/is_allowed", status_code=status.HTTP_200_OK)
-async def is_allowed(
-    payload: RateCheckRequest, 
-    r: aioredis.Redis = Depends(get_redis)
-):
-    nonce = uuid.uuid4().hex[:6]
-    
-    if payload.access_key:
-        redis_key = f"{{ratelimiter}}:v1:token:{payload.access_key}"
-
-        if payload.limit is None or payload.window is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Token-authenticated requests must explicitly supply limit and window metrics."
-            )
-        active_limit = payload.limit
-        active_window = payload.window
-    else:
-        redis_key = f"{{ratelimiter}}:v1:ip:{payload.ip_key}"
-        active_limit = payload.limit if payload.limit is not None else settings.default_ip_limit
-        active_window = payload.window if payload.window is not None else settings.default_ip_window
-    
-    try:
-        allowed_flag, count = await LUA_SCRIPT_RUNNER(
-            keys=[redis_key], 
-            args=[active_limit, active_window, nonce],
-            client=r
-        )
-        
-        if not allowed_flag:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS, 
-                detail={
-                    "message": "Rate limit exceeded",
-                    "current_count": count,
-                    "limit": active_limit
-                }
-            )
-        
+    if not res["allowed"]:
+        response.status_code = status.HTTP_429_TOO_MANY_REQUESTS
         return {
-            "status": "allowed",
-            "current_count": count,
-            "limit": active_limit,
-            "remaining": max(0, active_limit - count)
+            "status": "blocked",
+            "detail": {
+                "message": res["message"],
+                "current_count": res["current_count"],
+                "limit": res["limit"]
+            }
         }
 
-    except HTTPException:
-        # Re-raise explicit 429 boundaries so they bypass the fail-open fallback block
-        raise
-    except Exception as e:
-        logger.error(f"CRITICAL: Redis execution anomaly. Defaulting FAIL-OPEN. Error: {e}")
-        return {
-            "status": "allowed",
-            "message": "Rate limiting temporarily unavailable, failing open",
-            "current_count": 0,
-            "limit": active_limit,
-            "remaining": active_limit
-        }
+    return {
+        "status": "allowed",
+        "current_count": res["current_count"],
+        "limit": res["limit"],
+        "remaining": res["remaining"],
+        "message": res["message"]
+    }
