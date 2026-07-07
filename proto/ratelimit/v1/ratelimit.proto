@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package ratelimit.v1;
+
+option go_package = "headsntails-core/proto/ratelimit/v1;ratelimitv1";
+
+service RateLimiterService {
+  rpc IsAllowed(IsAllowedRequest) returns (IsAllowedResponse);
+}
+
+message IsAllowedRequest {
+  optional string access_key = 1;
+  string ip_key = 2;
+  optional int32 limit = 3;
+  optional int32 window = 4;
+}
+
+message IsAllowedResponse {
+  string status = 1; // e.g., "allowed" or "blocked"
+  int32 current_count = 2;
+  int32 limit = 3;
+  int32 remaining = 4;
+  optional string message = 5;
+}
