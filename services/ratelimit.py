@@ -43,7 +43,7 @@ async def execute_rate_check(
         
         if not allowed_flag:
             return {
-                "allowed": False,
+                "status": "blocked",
                 "current_count": count,
                 "limit": active_limit,
                 "remaining": 0,
@@ -51,7 +51,7 @@ async def execute_rate_check(
             }
             
         return {
-            "allowed": True,
+            "status": "allowed",
             "current_count": count,
             "limit": active_limit,
             "remaining": max(0, active_limit - count),
@@ -60,7 +60,7 @@ async def execute_rate_check(
     except Exception as e:
         logger.error(f"CRITICAL: Redis execution anomaly. Defaulting FAIL-OPEN. Error: {e}")
         return {
-            "allowed": True,
+            "status": "allowed",
             "current_count": 0,
             "limit": active_limit,
             "remaining": active_limit,
