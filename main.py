@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Distributed Rate Limiter", lifespan=lifespan)
 
 @app.post("/api/v1/is_allowed")
-async def check_rate_http(payload: RateCheckRequest, response: Response):
+async def check_rate(payload: RateCheckRequest, response: Response):
     res = await execute_rate_check(
         pool=pool,
         lua_runner=LUA_SCRIPT_RUNNER,
@@ -65,7 +65,7 @@ async def check_rate_http(payload: RateCheckRequest, response: Response):
             detail="Client must explicitly supply limit and window metrics when utilizing token layout."
         )
 
-    if not res["allowed"]:
+    if not res["status"]=="allowed":
         response.status_code = status.HTTP_429_TOO_MANY_REQUESTS
         return {
             "status": "blocked",
