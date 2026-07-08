@@ -22,8 +22,8 @@ async def lifespan(app: FastAPI):
 
     pool = aioredis.ConnectionPool.from_url(
         url=settings.redis_url,
-        decode_responses=True,
-        max_connections=5
+        max_connections=settings.redis_pool_max_connections,
+        retry_on_timeout=True,
     )
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
